@@ -59,7 +59,7 @@ The rename must preserve existing local data and keep legacy names only where re
 | Service logs | `Application Support/PortPilot/ServiceLogs` | `Application Support/DevBerth/ServiceLogs` |
 | Keychain service | `com.ysbc.portpilot.secrets` | `com.ysbc.devberth.secrets` |
 | Defaults domain | `com.ysbc.portpilot` | `com.ysbc.devberth` |
-| GitHub repository | `portpilot-macos` | `devberth-macos` only after separate authorization and verified code/data migration |
+| GitHub repository | `portpilot-macos` | `ysbc1247/DevBerth` |
 
 Migration rules:
 
@@ -84,7 +84,7 @@ Verified locally on 2026-07-21 (Asia/Seoul) with Xcode 26.4 and the DevBerth bun
 - The local Keychain did not contain a legacy testable secret. Legacy-service lookup, current-service precedence, copy-forward, and dual-service deletion were therefore verified with an isolated Keychain accessor rather than by modifying a user credential.
 - A direct runtime launch succeeded under the DevBerth executable and identity, then was stopped cleanly. No validation services remain running.
 
-The GitHub repository remains private under its existing `portpilot-macos` name; renaming it is deliberately pending separate authorization.
+The GitHub repository was renamed to the public `ysbc1247/DevBerth` repository on 2026-07-26 after explicit authorization. GitHub redirects the former repository URL, but current documentation and automation use the canonical DevBerth URL.
 
 ## Brand limitations
 
