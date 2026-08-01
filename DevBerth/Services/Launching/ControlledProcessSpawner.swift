@@ -142,7 +142,7 @@ struct POSIXControlledProcessSpawner: ControlledProcessSpawning, Sendable {
         }
     }
 
-    private static func makePipe() throws -> (read: Int32, write: Int32) {
+    static func makePipe() throws -> (read: Int32, write: Int32) {
         var descriptors: [Int32] = [0, 0]
         guard Darwin.pipe(&descriptors) == 0 else {
             throw DevBerthError.commandFailed(
@@ -164,6 +164,18 @@ struct POSIXControlledProcessSpawner: ControlledProcessSpawning, Sendable {
             }
             Darwin.close(descriptors[index])
             descriptors[index] = duplicated
+        }
+        for descriptor in descriptors {
+            let flags = Darwin.fcntl(descriptor, F_GETFD)
+            guard flags >= 0, Darwin.fcntl(descriptor, F_SETFD, flags | FD_CLOEXEC) >= 0 else {
+                let failure = errno
+                descriptors.forEach { Darwin.close($0) }
+                throw DevBerthError.commandFailed(
+                    command: "isolate managed log descriptor",
+                    status: Int32(failure),
+                    details: String(cString: strerror(failure))
+                )
+            }
         }
         return (read: descriptors[0], write: descriptors[1])
     }

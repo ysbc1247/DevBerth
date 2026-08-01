@@ -3,6 +3,44 @@ import XCTest
 @testable import DevBerth
 
 final class ProcessGroupTests: XCTestCase {
+    func testCommandAndManagedLogPipesDoNotLeakAcrossExec() throws {
+        let commandPipe = try FoundationCommandRunner.makePipe()
+        defer {
+            try? commandPipe.fileHandleForReading.close()
+            try? commandPipe.fileHandleForWriting.close()
+        }
+        let managedPipe = try POSIXControlledProcessSpawner.makePipe()
+        defer {
+            Darwin.close(managedPipe.read)
+            Darwin.close(managedPipe.write)
+        }
+
+        let descriptors = [
+            commandPipe.fileHandleForReading.fileDescriptor,
+            commandPipe.fileHandleForWriting.fileDescriptor,
+            managedPipe.read,
+            managedPipe.write
+        ]
+        for descriptor in descriptors {
+            let flags = Darwin.fcntl(descriptor, F_GETFD)
+            XCTAssertGreaterThanOrEqual(flags, 0)
+            XCTAssertNotEqual(flags & FD_CLOEXEC, 0)
+        }
+    }
+
+    func testCommandRunnerStillCapturesOutput() async throws {
+        let result = try await FoundationCommandRunner().run(
+            executable: URL(fileURLWithPath: "/usr/bin/printf"),
+            arguments: ["captured"],
+            environment: nil,
+            currentDirectory: nil
+        )
+
+        XCTAssertEqual(result.exitCode, 0)
+        XCTAssertEqual(result.stdoutString, "captured")
+        XCTAssertTrue(result.stderr.isEmpty)
+    }
+
     func testTopologyFindsNestedAndEscapedDescendants() {
         let topology = SystemProcessGroupInspector.parseTopology(
             "100 100 1 S\n101 100 100 S\n102 102 101 S\n103 100 1 Z\nmalformed\n"
