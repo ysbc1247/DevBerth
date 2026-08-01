@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 final class FoundationCommandRunner: CommandRunning, @unchecked Sendable {
@@ -9,8 +10,8 @@ final class FoundationCommandRunner: CommandRunning, @unchecked Sendable {
     ) async throws -> CommandResult {
         try await Task.detached(priority: .userInitiated) {
             let process = Process()
-            let standardOutput = Pipe()
-            let standardError = Pipe()
+            let standardOutput = try Self.makePipe()
+            let standardError = try Self.makePipe()
             process.executableURL = executable
             process.arguments = arguments
             process.environment = environment.map { ProcessInfo.processInfo.environment.merging($0) { _, new in new } }
@@ -41,5 +42,30 @@ final class FoundationCommandRunner: CommandRunning, @unchecked Sendable {
                 exitCode: process.terminationStatus
             )
         }.value
+    }
+
+    static func makePipe() throws -> Pipe {
+        let pipe = Pipe()
+        do {
+            try setCloseOnExec(pipe.fileHandleForReading.fileDescriptor)
+            try setCloseOnExec(pipe.fileHandleForWriting.fileDescriptor)
+            return pipe
+        } catch {
+            try? pipe.fileHandleForReading.close()
+            try? pipe.fileHandleForWriting.close()
+            throw error
+        }
+    }
+
+    private static func setCloseOnExec(_ descriptor: Int32) throws {
+        let flags = Darwin.fcntl(descriptor, F_GETFD)
+        guard flags >= 0, Darwin.fcntl(descriptor, F_SETFD, flags | FD_CLOEXEC) >= 0 else {
+            let failure = errno
+            throw DevBerthError.commandFailed(
+                command: "isolate command capture descriptor",
+                status: Int32(failure),
+                details: String(cString: strerror(failure))
+            )
+        }
     }
 }

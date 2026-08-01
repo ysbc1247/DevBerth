@@ -15,10 +15,15 @@ Implemented vertical slices:
 - Keychain-only secret-like environment fields with staged rollback, independent references on duplication, and reference-aware cleanup on edit or deletion.
 - Automated parser/domain/persistence/health/security tests plus harmless real-process discovery and termination integration tests.
 - Adaptive performance monitoring with one coalescing application-lifetime poller, semantic listener diffs, real AppKit foreground-surface tracking, activation publication of retained evidence, bounded full-identity process caching, slower/background resource and Docker schedules, bounded health/log work, compatibility-history retention, secret-free diagnostics, parser/diff benchmarks, and isolated Release soak tooling.
+- Close-on-exec isolation for trusted-command capture and managed-service log pipes, preventing concurrent dependency-layer launches from retaining sibling pipe endpoints and blocking project startup completion.
 
 Validated locally on 2026-07-22 with the repository's warnings-as-errors macOS test action: 210 of 210 tests passed with zero failures, skips, or expected failures in about 117 seconds. The run covered nine harmless real-process integrations, 19 MCP control-plane tests, all seven UI tests, adaptive/coalesced monitoring, semantic diffs, retained-snapshot activation publication, full-identity caching, bounded Docker/resource/health/log/history work, exact-container Compose fallback, guarded lifecycle paths, schema migrations, trust drift, Keychain lifecycle, process identity/group safety, deterministic ownership, and exact managed restart. Two repeated performance/soak iterations also passed. A 300-second isolated Release soak produced 60 samples, used 0.11 CPU-seconds after warm-up over 293 seconds, held steady RSS between 132,992 and 165,568 KiB, observed zero children and zero application error lines, and terminated only its exact test-owned PID. No live service was mutated during validation.
 
 The Phase 2 product identity is DevBerth. `ProductIdentity` and `ProductDataMigrator` preserve the legacy store, log, defaults, and Keychain compatibility boundary. The private GitHub repository retains its legacy name until a separate rename is authorized.
+
+## Parallel project launch isolation
+
+Parallel starts isolate every parent-side command-capture and managed-log pipe endpoint with close-on-exec before spawning a service. This prevents a long-running sibling from retaining a fingerprint probe's pipe writer and blocking EOF forever. The 2026-08-01 regression was observed as a three-service project stuck after its first dependency layer while both second-layer listeners were already active; the affected service had logs and an active listener but no managed-runtime registration beyond `Launch requested`. `ProcessGroupTests` now assert close-on-exec on both pipe families and verify that trusted-command output capture still completes. The composed stack passed the full warnings-as-errors macOS scheme on 2026-08-01: 218 of 218 tests passed with zero failures, skips, or expected failures in about 180 seconds.
 
 ## Application identity and evidence capture
 
