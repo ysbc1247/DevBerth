@@ -23,7 +23,7 @@ The Phase 2 product identity is DevBerth. `ProductIdentity` and `ProductDataMigr
 
 ## Parallel project launch isolation
 
-Parallel starts isolate every parent-side command-capture and managed-log pipe endpoint with close-on-exec before spawning a service. This prevents a long-running sibling from retaining a fingerprint probe's pipe writer and blocking EOF forever. The 2026-08-01 regression was observed as a three-service project stuck after its first dependency layer while both second-layer listeners were already active; the affected service had logs and an active listener but no managed-runtime registration beyond `Launch requested`. `ProcessGroupTests` now assert close-on-exec on both pipe families and verify that trusted-command output capture still completes.
+Parallel starts isolate every parent-side command-capture and managed-log pipe endpoint with close-on-exec before spawning a service. This prevents a long-running sibling from retaining a fingerprint probe's pipe writer and blocking EOF forever. The 2026-08-01 regression was observed as a three-service project stuck after its first dependency layer while both second-layer listeners were already active; the affected service had logs and an active listener but no managed-runtime registration beyond `Launch requested`. `ProcessGroupTests` now assert close-on-exec on both pipe families and verify that trusted-command output capture still completes. The composed stack passed the full warnings-as-errors macOS scheme on 2026-08-01: 218 of 218 tests passed with zero failures, skips, or expected failures in about 180 seconds.
 
 ## Application identity and evidence capture
 
