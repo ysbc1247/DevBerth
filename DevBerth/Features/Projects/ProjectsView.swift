@@ -16,8 +16,9 @@ struct ProjectsView: View {
     @State private var pendingObservedStop: ProjectObservedStopRequest?
 
     var body: some View {
+        let presentation = makePresentation()
         Group {
-            if projects.isEmpty {
+            if presentation.projects.isEmpty {
                 EmptyStateView(
                     symbol: "folder.badge.plus",
                     title: "No projects yet",
@@ -27,13 +28,15 @@ struct ProjectsView: View {
                 )
             } else {
                 List {
-                    ForEach(projects) { project in
-                        projectSection(project)
+                    ForEach(presentation.projects) { project in
+                        projectSection(project, unassignedProfiles: presentation.unassignedProfiles)
                     }
                     .onDelete { offsets in
-                        for project in offsets.map({ projects[$0] }) {
-                            profiles.filter { $0.projectID == project.id }.forEach { $0.projectID = nil }
-                            context.delete(project)
+                        for projectID in offsets.map({ presentation.projects[$0].id }) {
+                            profiles.filter { $0.projectID == projectID }.forEach { $0.projectID = nil }
+                            if let project = projects.first(where: { $0.id == projectID }) {
+                                context.delete(project)
+                            }
                         }
                         try? context.save()
                     }
@@ -79,41 +82,92 @@ struct ProjectsView: View {
         }
     }
 
-    private func projectSection(_ project: ProjectRecord) -> some View {
-        let projectProfiles = profiles.filter { $0.projectID == project.id }
-        let configurations = projectProfiles.compactMap {
-            $0.configuration(
+    private func makePresentation() -> ProjectsPresentation {
+        let profilesByProject = Dictionary(grouping: profiles.compactMap { profile in
+            profile.projectID.map { ($0, profile) }
+        }, by: \.0)
+        let profileNames = Dictionary(uniqueKeysWithValues: profiles.map { ($0.id, $0.name) })
+        let configurations = profiles.reduce(into: [UUID: ManagedServiceConfiguration]()) { values, profile in
+            values[profile.id] = profile.configuration(
                 dependencies: dependencies,
                 expectedPorts: expectedPorts,
                 processPolicies: processPolicies,
                 serviceChecks: serviceChecks
             )
         }
-        let activities = configurations.reduce(into: [UUID: ManagedServiceActivityEvidence]()) { values, configuration in
-            values[configuration.id] = model.managedServiceActivity(for: configuration)
+
+        let sections = projects.map { project in
+            let projectProfiles = profilesByProject[project.id]?.map(\.1) ?? []
+            let services = projectProfiles.map { profile in
+                let configuration = configurations[profile.id]
+                let activity = configuration.map { model.managedServiceActivity(for: $0) }
+                let dockerName = model.listeners.first(where: { listener in
+                    (listener.process.managedServiceID == profile.id
+                        || activity?.matchingListenerIDs.contains(listener.id) == true)
+                        && listener.process.docker != nil
+                })?.process.docker.map { $0.composeService ?? $0.containerName }
+                return ProjectServicePresentation(
+                    id: profile.id,
+                    name: profile.name,
+                    configuration: configuration,
+                    activity: activity,
+                    operation: model.serviceOperations[profile.id],
+                    runtimeStatus: model.runtimeStatuses[profile.id],
+                    expectedPorts: configuration?.expectedPorts.map(\.port).sorted() ?? [],
+                    dependencyNames: configuration?.dependencyServiceIDs.map {
+                        profileNames[$0] ?? String(localized: "Missing service")
+                    } ?? [],
+                    dockerName: dockerName,
+                    failure: model.profileFailures[profile.id] ?? model.runtimeIncidents[profile.id]?.cause
+                )
+            }
+            return ProjectSectionPresentation(
+                id: project.id,
+                name: project.name,
+                folderPath: project.folderPath,
+                gitRemoteURL: project.gitRemoteURL.flatMap(URL.init(string:)),
+                operation: model.projectOperations[project.id],
+                services: services
+            )
         }
+        let unassigned = profiles.compactMap { profile in
+            profile.projectID == nil
+                ? UnassignedProfilePresentation(id: profile.id, name: profile.name)
+                : nil
+        }
+        return ProjectsPresentation(projects: sections, unassignedProfiles: unassigned)
+    }
+
+    private func projectSection(
+        _ project: ProjectSectionPresentation,
+        unassignedProfiles: [UnassignedProfilePresentation]
+    ) -> some View {
+        let configurations = project.services.compactMap(\.configuration)
+        let activities = Dictionary(uniqueKeysWithValues: project.services.compactMap { service in
+            service.activity.map { (service.id, $0) }
+        })
         let startableCount = activities.values.filter { $0.state == .stopped }.count
         let stoppableCount = activities.values.filter { $0.state != .stopped }.count
-        let operation = model.projectOperations[project.id]
+        let operation = project.operation
         let projectIsBusy = operation?.isRunning == true
         return Section {
-            if projectProfiles.isEmpty {
+            if project.services.isEmpty {
                 Text("Add an existing managed service to orchestrate this project.")
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 6)
             } else {
-                ForEach(projectProfiles) { profile in
-                    let configuration = configurations.first { $0.id == profile.id }
-                    let activity = activities[profile.id]
-                    let serviceOperation = model.serviceOperations[profile.id]
+                ForEach(project.services) { service in
+                    let configuration = service.configuration
+                    let activity = service.activity
+                    let serviceOperation = service.operation
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
-                            StatusDot(status: visualStatus(for: profile.id, activity: activity))
+                            StatusDot(status: visualStatus(runtimeStatus: service.runtimeStatus, activity: activity))
                             Image(systemName: "play.square")
-                            Text(profile.name).font(.headline)
+                            Text(service.name).font(.headline)
                             Spacer()
-                            ForEach(expectedPorts.filter { $0.profileID == profile.id }) { port in
-                                Text(":\(port.port)")
+                            ForEach(service.expectedPorts, id: \.self) { port in
+                                Text(":\(port)")
                                     .font(.system(.caption, design: .monospaced))
                                     .foregroundStyle(.secondary)
                             }
@@ -145,7 +199,7 @@ struct ProjectsView: View {
                                 }
                             }
                             Button("Remove from Project") {
-                                profile.projectID = nil
+                                profiles.first { $0.id == service.id }?.projectID = nil
                                 try? context.save()
                             }
                         }
@@ -153,13 +207,13 @@ struct ProjectsView: View {
                         HStack(spacing: DevBerthSpacing.medium) {
                             if let configuration, !configuration.dependencyServiceIDs.isEmpty {
                                 Label(
-                                    "Depends on \(configuration.dependencyServiceIDs.map { serviceName($0, in: projectProfiles) }.joined(separator: ", "))",
+                                    "Depends on \(service.dependencyNames.joined(separator: ", "))",
                                     systemImage: "arrow.triangle.branch"
                                 )
                             } else {
                                 Label("No dependencies", systemImage: "circle")
                             }
-                            if let status = model.runtimeStatuses[profile.id] {
+                            if let status = service.runtimeStatus {
                                 Label(
                                     "\(humanized(status.lifecycleState.rawValue)) · \(humanized(status.healthState.rawValue))",
                                     systemImage: "waveform.path.ecg"
@@ -167,17 +221,13 @@ struct ProjectsView: View {
                             } else if let activity, activity.state == .observed {
                                 Label(observedStatusText(activity), systemImage: "eye")
                             }
-                            if let docker = model.listeners.first(where: { listener in
-                                (listener.process.managedServiceID == profile.id
-                                    || activity?.matchingListenerIDs.contains(listener.id) == true)
-                                    && listener.process.docker != nil
-                            })?.process.docker {
-                                Label(docker.composeService ?? docker.containerName, systemImage: "shippingbox.fill")
+                            if let dockerName = service.dockerName {
+                                Label(dockerName, systemImage: "shippingbox.fill")
                             }
                         }
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        if let failure = model.profileFailures[profile.id] ?? model.runtimeIncidents[profile.id]?.cause {
+                        if let failure = service.failure {
                             Label(failure, systemImage: "exclamationmark.triangle.fill")
                                 .font(.caption)
                                 .foregroundStyle(.red)
@@ -246,31 +296,32 @@ struct ProjectsView: View {
                     .help(stoppableCount == 0
                         ? "All project services are already stopped."
                         : "Stop \(stoppableCount) active service(s) in reverse dependency order.")
-                    Button("Discover Services", systemImage: "sparkle.magnifyingglass") {
-                        discoveryProject = project
-                    }
-                    .disabled(project.folderPath == nil)
-                    Button("Export Manifest", systemImage: "square.and.arrow.up") {
-                        exportManifest(for: project, configurations: configurations)
-                    }
-                    .disabled(project.folderPath == nil || configurations.isEmpty)
-                    Menu("Add Service", systemImage: "plus") {
-                        let available = profiles.filter { $0.projectID == nil }
-                        if available.isEmpty { Text("No unassigned managed services") }
-                        ForEach(available) { profile in
-                            Button(profile.name) {
-                                profile.projectID = project.id
-                                try? context.save()
+                    Menu("Project Actions", systemImage: "ellipsis.circle") {
+                        Button("Discover Services", systemImage: "sparkle.magnifyingglass") {
+                            discoveryProject = projects.first { $0.id == project.id }
+                        }
+                        .disabled(project.folderPath == nil)
+                        Button("Export Manifest", systemImage: "square.and.arrow.up") {
+                            exportManifest(for: project, configurations: configurations)
+                        }
+                        .disabled(project.folderPath == nil || configurations.isEmpty)
+                        Menu("Add Service", systemImage: "plus") {
+                            if unassignedProfiles.isEmpty { Text("No unassigned managed services") }
+                            ForEach(unassignedProfiles) { available in
+                                Button(available.name) {
+                                    profiles.first { $0.id == available.id }?.projectID = project.id
+                                    try? context.save()
+                                }
                             }
                         }
-                    }
-                    Menu("Open", systemImage: "arrow.up.forward.app") {
-                        if let path = project.folderPath {
-                            Button("Finder") { NSWorkspace.shared.open(URL(fileURLWithPath: path)) }
-                            Button("Terminal") { openInTerminal(path) }
-                        }
-                        if let remote = project.gitRemoteURL, let url = URL(string: remote) {
-                            Button("Git Repository") { NSWorkspace.shared.open(url) }
+                        Menu("Open", systemImage: "arrow.up.forward.app") {
+                            if let path = project.folderPath {
+                                Button("Finder") { NSWorkspace.shared.open(URL(fileURLWithPath: path)) }
+                                Button("Terminal") { openInTerminal(path) }
+                            }
+                            if let url = project.gitRemoteURL {
+                                Button("Git Repository") { NSWorkspace.shared.open(url) }
+                            }
                         }
                     }
                 }
@@ -372,10 +423,6 @@ struct ProjectsView: View {
         }
     }
 
-    private func serviceName(_ id: UUID, in projectProfiles: [LaunchProfileRecord]) -> String {
-        projectProfiles.first { $0.id == id }?.name ?? "Missing service"
-    }
-
     private func humanized(_ value: String) -> String {
         value.replacingOccurrences(
             of: "([a-z])([A-Z])",
@@ -391,7 +438,7 @@ struct ProjectsView: View {
     }
 
     private func exportManifest(
-        for project: ProjectRecord,
+        for project: ProjectSectionPresentation,
         configurations: [ManagedServiceConfiguration]
     ) {
         guard let rootPath = project.folderPath else { return }
@@ -411,10 +458,10 @@ struct ProjectsView: View {
     }
 
     private func visualStatus(
-        for profileID: UUID,
+        runtimeStatus status: ManagedServiceRuntimeStatus?,
         activity: ManagedServiceActivityEvidence?
     ) -> StatusDot.Status {
-        guard let status = model.runtimeStatuses[profileID] else {
+        guard let status else {
             switch activity?.state {
             case .controlled: return .healthy
             case .observed: return .warning
@@ -438,6 +485,38 @@ struct ProjectsView: View {
             localized: "Observed on \(activity.openExpectedPortCount) of \(activity.expectedPortCount) expected ports"
         )
     }
+}
+
+private struct ProjectsPresentation {
+    let projects: [ProjectSectionPresentation]
+    let unassignedProfiles: [UnassignedProfilePresentation]
+}
+
+private struct ProjectSectionPresentation: Identifiable {
+    let id: UUID
+    let name: String
+    let folderPath: String?
+    let gitRemoteURL: URL?
+    let operation: ProjectOperationStatus?
+    let services: [ProjectServicePresentation]
+}
+
+private struct ProjectServicePresentation: Identifiable {
+    let id: UUID
+    let name: String
+    let configuration: ManagedServiceConfiguration?
+    let activity: ManagedServiceActivityEvidence?
+    let operation: ServiceOperationStatus?
+    let runtimeStatus: ManagedServiceRuntimeStatus?
+    let expectedPorts: [UInt16]
+    let dependencyNames: [String]
+    let dockerName: String?
+    let failure: String?
+}
+
+private struct UnassignedProfilePresentation: Identifiable {
+    let id: UUID
+    let name: String
 }
 
 private struct ProjectObservedStopRequest: Identifiable {
