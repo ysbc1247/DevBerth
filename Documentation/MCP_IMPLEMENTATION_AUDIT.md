@@ -6,7 +6,7 @@ Date: 2026-07-21 (Asia/Seoul)
 
 This audit covers the Phase 2 application at commit `7ec17bf46ffc0bfffdc8cb3363b211c7228f113e` on `phase-2-differentiation`. Phase 3 work continues on `phase-3-full-mcp-control-plane`.
 
-The repository is private (`ysbc1247/portpilot-macos`) and its default branch is `main`. The product is DevBerth, bundle identifier `com.ysbc.devberth`, with a macOS 14 deployment target. The app has Hardened Runtime enabled and App Sandbox disabled. It installs no privileged helper and has no network service.
+The repository is public (`ysbc1247/DevBerth`) and its default branch is `main`. The product is DevBerth, bundle identifier `com.ysbc.devberth`, with a macOS 14 deployment target. The app has Hardened Runtime enabled and App Sandbox disabled. It installs no privileged helper and has no network service.
 
 Baseline validation before Phase 3 changes:
 
@@ -141,4 +141,3 @@ Production uses STDIO only. Streamable HTTP is supported by Codex and the SDK bu
 4. V7 must add stable revisions and organization records without editing V1-V6.
 5. Every destructive action must be represented by an expiring, single-use preview held by the app host.
 6. Development mode must use an in-memory store and application-owned fixtures and must remove development tools from Release discovery.
-

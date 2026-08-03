@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ysbc1247/portpilot-macos/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/ysbc1247/portpilot-macos/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/ysbc1247/DevBerth/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/ysbc1247/DevBerth/actions/workflows/ci.yml/badge.svg?branch=main"></a>
   <img alt="macOS 14 or newer" src="https://img.shields.io/badge/macOS-14%2B-111111?logo=apple">
   <img alt="Swift 5 language mode" src="https://img.shields.io/badge/Swift-5-F05138?logo=swift&logoColor=white">
   <img alt="MCP protocol 2025-11-25" src="https://img.shields.io/badge/MCP-2025--11--25-5A67D8">
@@ -162,13 +162,13 @@ Before signaling a host process, DevBerth compares a strong fingerprint containi
 - Git;
 - Docker Desktop or a compatible Docker CLI only if you want Docker features.
 
-DevBerth is currently distributed from source. Every merged pull request publishes a versioned [GitHub source release](https://github.com/ysbc1247/portpilot-macos/releases) with its change details, but the repository does not yet publish a Developer ID-notarized binary or an automatic updater.
+DevBerth is currently distributed from source. Every merged pull request publishes a versioned [GitHub source release](https://github.com/ysbc1247/DevBerth/releases) with its change details, but the repository does not yet publish a Developer ID-notarized binary or an automatic updater.
 
 ### Build and install the daily-use app
 
 ```bash
-git clone https://github.com/ysbc1247/portpilot-macos.git
-cd portpilot-macos
+git clone https://github.com/ysbc1247/DevBerth.git
+cd DevBerth
 Scripts/build-and-install-app --open-full-disk-access
 open /Applications/DevBerth.app
 ```
